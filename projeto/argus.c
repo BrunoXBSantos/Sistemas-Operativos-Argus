@@ -6,34 +6,82 @@
 #include <fcntl.h>
 
 int readln(int fildes, char *buf, int nbyte);
+char * concatenaString(char *argv[], char *buffer, int total);
+void comunicacao();
+
+int fd;
+const char *prompt = "argus$ ";
+char *fifo = "/tmp/fifo";  // FIFO file path
 
 
 int main(int argc, char *argv[]){
-	char *myfifo = "fifo";  // FIFO file path
-	int fd;
+	
+	int n;
 
-	char *sair="SAIR";
+	
 	char *ligar="LIGAR";
 	char resposta[30], tarefa[30] = "";
 	int flag = 0;
-	char *prompt = "argus$ ";
 	
-	 
-	 
-	printf("***** Bem vindo ao programa Argus *****\n");
-	printf("***** A conectar ao servidor .... *****\n");
-	
-	
+	char *comunicar="COMUNICAR";
+	char buffer[20]="";
+	char *aceite="ACEITE";
 
-	while(!flag){
-		write(1,prompt,strlen(prompt)+1);
-		readln(0,tarefa,30);
+	 
+	fd = open(fifo,O_WRONLY);
+	 
+	if(argc == 1){
+		write(fd,comunicar,strlen(comunicar)+1);
+		close(fd);
+		fd=open(fifo,O_RDONLY);
+		read(fd, buffer, 80);
+		if(strcmp(buffer, aceite) == 0){
+			close(fd);
+			comunicacao();
+		}
 	}
-	
+	else{
+		//buffer = concatenaString(&argv[1],&buffer,argc-2);
+		printf("%s\n",buffer);
+		write(fd,comunicar,strlen(comunicar)+1);
+	}
 
-	printf("\n%s\n",tarefa);
+	
 
 }
+
+void comunicacao(){
+	char *sair="SAIR";
+	char buffer[80] = "";
+	int n;
+	do{
+		write(1,prompt,strlen(prompt)+1);
+		n=read(0,buffer,80);
+		puts(buffer);
+		printf("%d\n",n);
+		fd = open(fifo,O_WRONLY);
+		write(fd,buffer,n);
+		close(fd);
+		
+
+	}
+	while(1);
+	
+}
+
+
+char * concatenaString(char *argv[], char *buffer, int total){
+	int i;
+	char *s = buffer;  // colocar em s o endereco de buffer 
+	strcpy(buffer,argv[0]);
+	for(i=1;i<total;i++){
+		strcat(buffer," ");
+		strcat(buffer,argv[i]);
+	}
+	strcat(buffer," \0");
+	return s;
+	
+}	
 
 
 int readln(int fildes, char *buf, int nbyte){
