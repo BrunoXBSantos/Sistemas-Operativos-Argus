@@ -22,17 +22,72 @@ char *getPrimeiraPalavra(char buffer[80]);
 char *fifo = "/tmp/fifo";  // FIFO file path
 int fd_log, fd_fifo;
 char buffer[80];
+int conta = 0;
+
+
+typedef struct idtarefa{
+	int identificacao;
+	char tarefa[80];
+	struct idtarefa *prox;
+} *LLista;
+
+// criar um novo elemento da lista ligada, que no contexto do problema e um artigo
+// Devolve o endereco do elemento criado em caso de sucesso, em caso de insucesso, devolve NULL
+LLista criarElemento(int identificacao, char tarefaAdicionar[80]){
+	LLista novaTarefa = (LLista) malloc(sizeof(struct idtarefa));
+	if(novaTarefa!=NULL){
+		(novaTarefa->identificacao)=identificacao;
+		strcpy((novaTarefa->tarefa),tarefaAdicionar);
+		novaTarefa->prox = NULL;
+	}
+	return novaTarefa;
+}
+
+// Procura se existe um artigo pela sua referencia na lista
+//A funcao rece a cabeca da lista e a referencia a procurar
+// Devolve o endereco do artigo se encontrar a sua referencia. Devolve NULL caso a referencia nao existe na
+//lista
+LLista procurar(LLista l, int refe){
+	while(l!=NULL && (l->identificacao) != refe)
+		l=l->prox;
+	return l;
+}
+
+
+// Insere um artigo na lista.
+// A lista esta ordenada por ordem crescente do numero da referencia do artigo
+// Devolve, -1 se nao conseguir criar o artigo. 0 se o artigo ja exitir em stock(atualiza o stock). 1 se
+//for criado um novo artigo.
+
+int inserirElementoLista(LLista *l,int identificacao, char tarefaAdicionar[80]){
+	LLista p = NULL, novo = criarElemento(identificacao,tarefaAdicionar);
+	if(novo==NULL){
+		;
+	}
+	if((*l)==NULL){
+		(*l)=novo;
+		return 1;
+	}
+	p=procurar((*l), identificacao-1);
+	p->prox=novo; 
+	return 1;
+
+}
+
+// Inicializacao das listas ligadas
+LLista tarefasTerminadas = NULL;
+
 
 int main(int argc, char *argv[]){
+
+	
 
 	// Declaracao de variaveis 
 	
 	int  n;
 	
 	char *file_log = "log.txt"; // ficheiro que guarda a comunicacao com o cliente
-	char *aceite = "ACEITE";
-	char *comunicar = "COMUNICAR";
-
+	char *aceitarInterpretador="1";
 	/* Abrir || Criar o ficheiro log.txt  */
 	if((fd_log = open(file_log,O_RDWR | O_CREAT | O_TRUNC, 0644)) == -1){
 		sprintf(buffer,"Abrir ou criar ficheiro log.txt");
@@ -47,16 +102,16 @@ int main(int argc, char *argv[]){
 		_exit(2);
 	}
 
-	fd_fifo=open(fifo,O_RDONLY);
 	
+	fd_fifo=open(fifo,O_RDONLY);	
 
 	while((n=read(fd_fifo,buffer,1024)) > 0  || 1){
 		if(n>0){
 			/* Verifica qual das 2 opcoes vai executar o server*/
-			if(strcmp(buffer,"COMUNICAR") == 0){
+			if(strcmp(buffer,aceitarInterpretador) == 0){
 				close(fd_fifo);
 				fd_fifo = open(fifo,O_WRONLY);
-				write(fd_fifo,aceite,strlen(aceite)+1);
+				write(fd_fifo,aceitarInterpretador,strlen(aceitarInterpretador)+1);
 				close(fd_fifo);
 				comunicacao();
 				pause();
@@ -70,6 +125,66 @@ int main(int argc, char *argv[]){
 
 }
 
+
+
+void comunicacao(){
+	char comandosRecebidos[80]="";
+	char *primeiraPalavra;
+	int n;
+
+	fd_fifo=open(fifo,O_RDONLY);
+	n=read(fd_fifo,comandosRecebidos,80);
+	printf("%d\n",strlen(comandosRecebidos));
+	comandosRecebidos[strlen(comandosRecebidos)-1] = '\0';
+	puts(comandosRecebidos);
+	close(fd_fifo);
+
+	strcpy(buffer,comandosRecebidos);	
+	
+	primeiraPalavra = getPrimeiraPalavra(buffer);
+	
+
+	puts(comandosRecebidos);
+	printf("%d\n",strlen(comandosRecebidos));
+	printf("%s\n",primeiraPalavra);
+	printf("%d\n",strlen(primeiraPalavra));
+
+	if(strcmp(primeiraPalavra,"tempo-inactividade") == 0){
+		printf("tempo-inactividade\n");
+	}
+	else if(strcmp(primeiraPalavra,"tempo-execucao") == 0){
+		printf("tempo-execucao\n");
+	}
+	else if(strcmp(primeiraPalavra,"executar") == 0){
+		printf("EXECUTAR\n");
+		printf("%s\n",&(comandosRecebidos[strlen(primeiraPalavra)+1]));
+
+		executarTarefa(&(comandosRecebidos[strlen(primeiraPalavra)+1]));
+
+		puts("finish da tarefinha");
+
+
+	}
+	else if(strcmp(primeiraPalavra,"listar") == 0){
+		printf("listar\n");
+	}
+	else if(strcmp(primeiraPalavra,"terminar") == 0){
+		printf("terminar\n");
+	}
+	else if(strcmp(primeiraPalavra,"historico") == 0){
+		printf("historico\n");
+	}
+
+	else if(strcmp(primeiraPalavra,"ajuda") == 0){
+		printf("ajuda\n");
+	}
+
+	// executar grep -v ˆ# /etc/passwd | cut -f7 -d: | uniq | wc -l
+
+
+	
+}
+
 void executarTarefa(char *comandosRecebidos){
 	int n, i;
 	char comandos[20][20];
@@ -78,6 +193,12 @@ void executarTarefa(char *comandosRecebidos){
 	int n_pipes = 0;
 	int fd[10][2], pid[10];
 	int flag = 0,j;
+	int fd1 = open("teste.txt",O_CREAT | O_RDWR, 0644);
+
+
+	char tarefa[80] = "";
+	strcpy(tarefa,comandosRecebidos);
+
 
 	/* coloca as palavras num array de strings*/
 	n_tokens = separarComandos(comandos,comandosRecebidos);
@@ -91,6 +212,7 @@ void executarTarefa(char *comandosRecebidos){
 	n_pipes = separarComandos2(comandos,comandos2,n_tokens);
 
 	printf("%d\n",n_pipes);
+
 
 	for(i=0;i<n_pipes+1;i++){
 		for(j=0;j<20; j++){
@@ -177,62 +299,8 @@ void executarTarefa(char *comandosRecebidos){
 			wait(NULL);
 		}
 	}	
-}
-
-void comunicacao(){
-	char comandosRecebidos[80]="";
-	char *primeiraPalavra;
-	int n;
-
-	fd_fifo=open(fifo,O_RDONLY);
-	n=read(fd_fifo,comandosRecebidos,80);
-	printf("%d\n",strlen(comandosRecebidos));
-	comandosRecebidos[strlen(comandosRecebidos)-1] = '\0';
-	puts(comandosRecebidos);
-	close(fd_fifo);
-
-	strcpy(buffer,comandosRecebidos);	
-	
-	primeiraPalavra = getPrimeiraPalavra(buffer);
-	
-
-	puts(comandosRecebidos);
-	printf("%d\n",strlen(comandosRecebidos));
-	printf("%s\n",primeiraPalavra);
-	printf("%d\n",strlen(primeiraPalavra));
-
-	if(strcmp(primeiraPalavra,"tempo-inactividade") == 0){
-		printf("tempo-inactividade\n");
-	}
-	else if(strcmp(primeiraPalavra,"tempo-execucao") == 0){
-		printf("tempo-execucao\n");
-	}
-	else if(strcmp(primeiraPalavra,"executar") == 0){
-		printf("EXECUTAR\n");
-		printf("%s\n",&(comandosRecebidos[strlen(primeiraPalavra)+1]));
-
-		executarTarefa(&(comandosRecebidos[strlen(primeiraPalavra)+1]));
-
-		puts("finish da tarefinha");
-	}
-	else if(strcmp(primeiraPalavra,"listar") == 0){
-		printf("listar\n");
-	}
-	else if(strcmp(primeiraPalavra,"terminar") == 0){
-		printf("terminar\n");
-	}
-	else if(strcmp(primeiraPalavra,"historico") == 0){
-		printf("historico\n");
-	}
-
-	else if(strcmp(primeiraPalavra,"ajuda") == 0){
-		printf("ajuda\n");
-	}
-
-	// executar grep -v ˆ# /etc/passwd | cut -f7 -d: | uniq | wc -l
-
-
-	
+	inserirElementoLista(&tarefasTerminadas,conta++,tarefa);
+	puts(tarefa);
 }
 
 

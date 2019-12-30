@@ -15,27 +15,28 @@ char *fifo = "/tmp/fifo";  // FIFO file path
 
 
 int main(int argc, char *argv[]){
+
+	
 	
 	int n;
 
 	
-	char *ligar="LIGAR";
 	char resposta[30], tarefa[30] = "";
 	int flag = 0;
 	
-	char *comunicar="COMUNICAR";
+	char *iniciarInterpretador="1";  // 1 -> inicia interpretador de comandos
 	char buffer[20]="";
-	char *aceite="ACEITE";
 
 	 
-	fd = open(fifo,O_WRONLY);
+	
 	 
 	if(argc == 1){
-		write(fd,comunicar,strlen(comunicar)+1);
+		fd = open(fifo,O_WRONLY);
+		write(fd,iniciarInterpretador,strlen(iniciarInterpretador)+1);
 		close(fd);
 		fd=open(fifo,O_RDONLY);
 		read(fd, buffer, 80);
-		if(strcmp(buffer, aceite) == 0){
+		if(strcmp(buffer, iniciarInterpretador) == 0){
 			close(fd);
 			comunicacao();
 		}
@@ -43,7 +44,7 @@ int main(int argc, char *argv[]){
 	else{
 		//buffer = concatenaString(&argv[1],&buffer,argc-2);
 		printf("%s\n",buffer);
-		write(fd,comunicar,strlen(comunicar)+1);
+		write(fd,iniciarInterpretador,strlen(iniciarInterpretador)+1);
 	}
 
 	
@@ -62,11 +63,13 @@ void comunicacao(){
 		fd = open(fifo,O_WRONLY);
 		write(fd,buffer,n);
 		close(fd);
+
+		
 		
 
 	}
-	while(1);
-	
+	while(strcmp(buffer,sair)!=0);
+	printf("Muito obrigado por utilizado o nosso servico\n");
 }
 
 
