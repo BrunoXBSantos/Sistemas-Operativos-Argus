@@ -274,14 +274,14 @@ void executarTarefa(char *comandosRecebidos, int numeracaoTarefas){
 	int flag_execucaoTarefa = 0;
 	int status;
 
-	// ativar o alarme
+	// ativar o alarme com o tempo maximo de execucao de uma tarefa
 	signal(SIGALRM, alarme);
-
+	alarm(tempo_execucao);
 
 	char tarefa[80] = "";
 	strcpy(tarefa,comandosRecebidos);
 
-	alarm(tempo_execucao);
+	
 
 	/* coloca as palavras num array de strings*/
 	n_tokens = separarComandos(comandos,comandosRecebidos);
