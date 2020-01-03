@@ -8,6 +8,8 @@
 int readln(int fildes, char *buf, int nbyte);
 char * concatenaString(char *argv[], char *buffer, int total);
 void comunicacao();
+char *getPrimeiraPalavra(char q[80]);
+void historico();
 
 int fd1, fd2;
 const char *prompt = "argus$ ";
@@ -46,26 +48,56 @@ int main(int argc, char *argv[]){
 
 void comunicacao(){
 	char *sair="SAIR\n";
-	char buffer[80] = "";
+	char *primeiraPalavra;
+	char fraseLida[80] = "", buffer[80] = "";
 	int n;
 	int flag = 0;
 	fd1 = open(fifo1,O_WRONLY);
 	fd2 = open(fifo2,O_RDONLY);
+
+
 	do{
 		write(1,prompt,strlen(prompt)+1);
-		n=read(0,buffer,80);
-		if(strstr(buffer,sair)!=NULL){
+		n=read(0,fraseLida,80);
+		if(strstr(fraseLida,sair)!=NULL){
 			flag = 1;
 		}
 		else{
-			printf("numero lido: %d\n",n);
-			puts(buffer);
-			
-			write(fd1,buffer,n);
+			strcpy(buffer,fraseLida);	
+	
+			primeiraPalavra = getPrimeiraPalavra(buffer);
 
-			strcpy(buffer,"");
-			n=read(fd2,buffer,80);
-			write(1,buffer,n);
+			printf("primeira palavra: %s -- %d\n",primeiraPalavra,strlen(primeiraPalavra));
+			printf("frase escrita: %s  --  %d\n",fraseLida, n);
+
+			if(strcmp(primeiraPalavra,"tempo-inactividade") == 0){
+				printf("tempo-inactividade\n");
+			}
+			else if(strcmp(primeiraPalavra,"tempo-execucao") == 0){
+				printf("tempo-execucao\n");
+			}
+			else if(strcmp(primeiraPalavra,"executar") == 0){
+				write(fd1,fraseLida,n);
+				strcpy(fraseLida,"");
+				n=read(fd2,fraseLida,80);
+				write(1,fraseLida,n);	
+			}
+			else if(strcmp(primeiraPalavra,"listar") == 0){
+				printf("listar\n");
+			}
+			else if(strcmp(primeiraPalavra,"terminar") == 0){
+				printf("terminar\n");
+			}
+			else if(strcmp(primeiraPalavra,"historico") == 0){
+				write(fd1,fraseLida,n);
+				strcpy(fraseLida,"");
+				historico();
+			}
+
+			else if(strcmp(primeiraPalavra,"ajuda") == 0){
+				printf("ajuda\n");
+			}
+	
 		}
 
 	}
@@ -73,6 +105,20 @@ void comunicacao(){
 	printf("Muito obrigado por utilizado o nosso servico\n");
 }
 
+// ver lista de tarefas executadas
+void historico(){
+	char temp[80];
+	int n, flag_historico = 0;
+	while(!flag_historico){
+		n=read(fd2,temp,80);
+		if(strcmp(temp,"FIM TRANSMISSAO") == 0){
+			flag_historico = 1;
+		}
+		else{
+			write(1,temp,n);
+		}
+	}
+}
 
 char * concatenaString(char *argv[], char *buffer, int total){
 	int i;
@@ -110,3 +156,11 @@ int readln(int fildes, char *buf, int nbyte){
 
 	return -1;
 }	
+
+char *getPrimeiraPalavra(char q[80]){
+	const char s[2] = " ";
+	char *token;
+	/* get the first token */
+	token = strtok(q, s);
+	return token;
+}

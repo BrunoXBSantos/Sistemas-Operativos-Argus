@@ -20,6 +20,9 @@ void rmv(char *str);
 int separarComandos2();
 void executarTarefa();
 char *getPrimeiraPalavra(char buffer[80]);
+void historico();
+int readln(int fildes, char *buf, int nbyte);
+void filhoterminou(int sig);
 
 char *fifo1 = "/tmp/fifo1";  // FIFO file path
 char *fifo2 = "/tmp/fifo2";
@@ -27,8 +30,11 @@ int fd_log, fd_fifo1, fd_fifo2;
 char buffer[80];
 int numeracaoTarefas = 0;
 int *pt_numeracaoTarefas = &numeracaoTarefas;
+int tempo_execucao = 5; // tempo maximo de execucao de uma tarefa
+int flag_tempo_execucao = 0; // se 0 o tempo de execucao não chegou ao fim. Se 1 chegou ao fim
 
 int fd_tarefasConcluidas;
+int contaPipesExecutados = 1;
 
 
 typedef struct idtarefa{
@@ -59,6 +65,17 @@ LLista procurar(LLista l, int refe){
 	return l;
 }
 
+// EXIBIR conteudo
+void listar(LLista l){
+	char temp[105];
+	
+	while(l!=NULL && (l->prox) != NULL){
+		sprintf(temp, "#%2d, concluida: %s",l->identificacao,l->tarefa);
+		write(fd_fifo2,temp,17+strlen(l->tarefa));
+		printf("%d %s\n",l->identificacao, l->tarefa);
+		l=l->prox;
+	}
+}
 
 // Insere um artigo na lista.
 // A lista esta ordenada por ordem crescente do numero da referencia do artigo
@@ -80,20 +97,38 @@ int inserirElementoLista(LLista *l,int identificacao, char tarefaAdicionar[80]){
 
 }
 
-// Inicializacao das listas ligadas
-LLista tarefasTerminadas = NULL;
-
-void filhoterminou() {
-	int j;
-	j=wait(NULL);
-	puts("FILHO TERMINOU");
-	printf("pid do filho %d\n",j);
+int removerTarefaListaExecucao(LLista *l, int identificacao){
+	LLista p=(*l), q=NULL;
+	if(*l == NULL)
+		return 0;
+	if(((*l)->identificacao) == identificacao){
+		(*l)=(*l)->prox;
+		free(p);
+		return 1;
+	}
+	q=(*l)->prox;
+	while(q!=NULL && identificacao > (q->identificacao)){
+		p=q;
+		q=q->prox;
+	}
+	if(q!=NULL){
+		p->prox;
+		q->prox;
+		free(q);
+		return 1;
+	}
+	return 0;
 }
+
+// Inicializacao das listas ligadas
+LLista tarefasExecucao = NULL;
 
 int main(int argc, char *argv[]){
 
 	int pid[10];
 	int i = 0;
+
+	fd_tarefasConcluidas = open("lista-tarefas-concluidas.txt", O_RDWR | O_CREAT, 0644);
 
 	signal(SIGCHLD, filhoterminou);
 
@@ -119,7 +154,6 @@ int main(int argc, char *argv[]){
 	while((n=read(fd_fifo1,comandosRecebidos,1024)) > 0  || 1){
 		int pid;
 		if(n>0){
-				(*pt_tarefasExecucao)+=1;
 				pid = fork();
 				if(pid==0){
 					puts("FUNCAO PRINCIPAL");
@@ -145,7 +179,7 @@ int main(int argc, char *argv[]){
 void comunicacao(char comandosRecebidos[80]){
 	
 	char *primeiraPalavra;
-	int n;
+	int n, numeroTarefaAtual;
 
 	puts("FUNCAO comunicacao ");
 	printf("%d\n",strlen(comandosRecebidos));
@@ -168,12 +202,20 @@ void comunicacao(char comandosRecebidos[80]){
 	}
 	else if(strcmp(primeiraPalavra,"executar") == 0){
 		char temp[17];
+		
+		/* Atribui a identificaçao da tarefa */
 		(*pt_numeracaoTarefas)+=1;
 		numeroTarefaAtual = (*pt_numeracaoTarefas);
 		printf("Numero da tarefa a ser executada: %d  %d\n",numeroTarefaAtual,(*pt_numeracaoTarefas));
+		
+		/*	Envia para o argus o numero da tarefa a ser executada */
 		sprintf(temp, "nova tarefa #%2d\n",numeroTarefaAtual);
 		write(fd_fifo2,temp,17);
 		
+		/* Coloca na lista de tarefas a serem executadas */
+		inserirElementoLista(&tarefasExecucao,numeroTarefaAtual,&(comandosRecebidos[strlen(primeiraPalavra)+1]));
+
+
 		printf("%s\n",&(comandosRecebidos[strlen(primeiraPalavra)+1]));
 		executarTarefa(&(comandosRecebidos[strlen(primeiraPalavra)+1]),numeroTarefaAtual);
 		
@@ -185,7 +227,6 @@ void comunicacao(char comandosRecebidos[80]){
 		printf("terminar\n");
 	}
 	else if(strcmp(primeiraPalavra,"historico") == 0){
-		printf("historico\n");
 		historico();
 
 	}
@@ -201,7 +242,25 @@ void comunicacao(char comandosRecebidos[80]){
 }
 
 void historico(){
-	listar(tarefasTerminadas);
+	char temp[80]="";
+	int n, fd = open("lista-tarefas-concluidas.txt", O_RDONLY);
+	while((n=readln(fd,temp,80)) > 0){
+		write(1,temp,n);
+		write(fd_fifo2,temp,n);
+		puts(temp);
+	}
+	write(fd_fifo2,"FIM TRANSMISSAO",16);
+	close(fd);
+}
+
+void alarme(int sig){
+	flag_tempo_execucao = 1;
+}
+
+void filhoterminou(int sig){
+	int pid; 
+	pid = wait(NULL);
+	contaPipesExecutados++;
 }
 
 void executarTarefa(char *comandosRecebidos, int numeracaoTarefas){
@@ -214,12 +273,17 @@ void executarTarefa(char *comandosRecebidos, int numeracaoTarefas){
 	int flag = 0,j;
 	int fd1 = open("teste.txt",O_CREAT | O_RDWR, 0644);
 	int flag_execucaoTarefa = 0;
+	int status;
 
+	// ativar o alarme com o tempo maximo de execucao de uma tarefa
+	signal(SIGALRM, alarme);
+	signal(SIGCHLD, filhoterminou);
+	alarm(tempo_execucao);
 
 	char tarefa[80] = "";
 	strcpy(tarefa,comandosRecebidos);
 
-
+	
 
 	/* coloca as palavras num array de strings*/
 	n_tokens = separarComandos(comandos,comandosRecebidos);
@@ -270,28 +334,28 @@ void executarTarefa(char *comandosRecebidos, int numeracaoTarefas){
 				if(dup2(fd[i][1],1) == -1){
 					sprintf(buffer,"Erro no dup2 %duuuu",i+1);
 					perror(buffer);
-					_exit(EXIT_FAILURE);
+					_exit(-1);
 				}
 				close(fd[i][1]);
 				printf("\nDebug %d\n",i);
 				execvp(comandos2[i][0],comandos2[i]);
 				sprintf(buffer,"Erro no execvp %d",i+1);
 				perror(buffer);
-				_exit(EXIT_FAILURE);
+				_exit(-1);
 			}
 			else {
 				if(i==n_pipes){
 					if(dup2(fd[i-1][0],0)==-1){
 						sprintf(buffer,"Erro no dup2 %d",i-1);
 						perror(buffer);
-						_exit(EXIT_FAILURE);
+						_exit(-1);
 					}
 					close(fd[i-1][0]);
 					//sleep(5);
 					execvp(comandos2[i][0],comandos2[i]);
 					sprintf(buffer,"Erro no execvp %d",i+1);
 					perror(buffer);
-					_exit(EXIT_FAILURE);
+					_exit(-1);
 				}
 				else{
 					// tenho que fechar os descritores anteriores
@@ -300,47 +364,64 @@ void executarTarefa(char *comandosRecebidos, int numeracaoTarefas){
 					if(dup2(fd[i-1][0],0) == -1){
 						sprintf(buffer,"Erro no dup2 %d",i-1);
 						perror(buffer);
-						_exit(EXIT_FAILURE);
+						_exit(-1);
 					}
 					close(fd[i-1][0]);
 					close(fd[i][0]);  // fecha a leitura atual
 					if(dup2(fd[i][1],1) == -1){
 						sprintf(buffer,"Erro no dup2 %d",i+1);
 						perror(buffer);
-						_exit(EXIT_FAILURE);
+						_exit(-1);
 					}
 					close(fd[i][1]);
 					execvp(comandos2[i][0],comandos2[i]);
 					sprintf(buffer,"Erro no execvp %d",i+1);
 					perror(buffer);
-					_exit(EXIT_FAILURE);
+					_exit(-1);
 				}
 			}
 		}
 		else{
 			close(fd[i][1]);
-			wait(NULL);
+			pause();
+			printf("flag_tempo_execucao %d\n", flag_tempo_execucao);
+			printf("contaPipesExecutados %d\n", contaPipesExecutados);
+			if(flag_tempo_execucao==1){
+				for(i=0;i<contaPipesExecutados;i++){
+					kill(pid[i],SIGKILL);
+				}
+			}
+
+			/*
+			waitpid(pid[i],&status,0);
+			if(WEXITSTATUS(status) == -1 || !WIFEXITED(status)){
+				flag_execucaoTarefa=1;
+			}
+			*/
 		}
 	}	
-	if(flag_execucaoTarefa == 1){
-		sprintf(buffer,"Tarefa #%2d executada sem exito",numeracaoTarefas);
-		write(1,buffer,31);
-		write(fd_fifo2,buffer,31);
-	}
-	else{
-		sprintf(buffer,"Tarefa #%2d concluida com sucesso\n",numeracaoTarefas);
-		write(1,buffer,34);
-		write(fd_fifo2,buffer,34);
-		inserirElementoLista(&tarefasTerminadas,numeracaoTarefas,tarefa);
-		puts(tarefa);
-		printf("Tarefa executada: %d\n",numeracaoTarefas);
-
+	
+	// remover tarefa pendente
+	removerTarefaListaExecucao(&tarefasExecucao, numeracaoTarefas);
+	puts(tarefa);
+	
+	// colocar no ficheiro de tarefas concluidas
+	printf("flag_tempo_execucao %d\n", flag_tempo_execucao);
+	if(flag_tempo_execucao){ // nao foi executada com exito
 		// colocar no ficheiro de tarefas concluidas
-		printf("tamanho da TAREFAAAAA %d\n\n\n\n",strlen(tarefa));
+		puts("NAO EXECUTADA");
+		sprintf(buffer,"#%2d max. execucao: %s",numeracaoTarefas,tarefa);
+		write(fd_tarefasConcluidas,buffer,19+strlen(tarefa));
+		write(fd_tarefasConcluidas,"\n",1);
+	}
+	else{		// executada com exito
 		sprintf(buffer,"#%d, concluida: %s",numeracaoTarefas,tarefa);
 		write(fd_tarefasConcluidas,buffer,16+strlen(tarefa));
 		write(fd_tarefasConcluidas,"\n",1);
 	}
+
+	puts("COLOCADO NO FICHEIRO A TAREFA CONCLUIDA");
+	
 }
 
 
@@ -421,3 +502,26 @@ char *getPrimeiraPalavra(char q[80]){
 	token = strtok(q, s);
 	return token;
 }
+
+int readln(int fildes, char *buf, int nbyte){
+	int n, flag = 0;
+	char a;
+	int count = 0;
+	while(!flag){
+		if((n=read(fildes,&a,1))<=0)
+			flag = 1;
+		if(a=='\n' || count >= nbyte){
+			(*buf) = '\n';
+			flag = 1;
+		}
+		else
+			(*buf++) = a;
+		count++;
+	}
+	if(n>0)
+		return count;
+	if(!n)
+		return 0;
+
+	return -1;
+}	
