@@ -31,9 +31,12 @@ int fd_log, fd_fifo1, fd_fifo2;
 char buffer[80];
 int numeracaoTarefas = 0;
 int *pt_numeracaoTarefas = &numeracaoTarefas;
-int tempo_execucao = 5; // tempo maximo de execucao de uma tarefa
-int flag_tempo_execucao = 0; // se 0 o tempo de execucao não chegou ao fim. Se 1 chegou ao fim
 
+int tempo_execucao = 5; // tempo maximo de execucao de uma tarefa
+int tempo_execucao_pipe = 2;
+
+int flag_tempo_execucao_pipe = 0;  // se 0 o tempo de execucao não chegou ao fim. Se 1 chegou ao fim
+int flag_tempo_execucao = 0; // se 0 o tempo de execucao não chegou ao fim. Se 1 chegou ao fim
 int fd_tarefasConcluidas;
 int contaPipesExecutados = 1;
 
@@ -285,6 +288,10 @@ void executarTarefa(char *comandosRecebidos, int numeracaoTarefas){
 	int flag_execucaoTarefa = 0;
 	int status;
 
+	contaPipesExecutados = 1;
+	flag_tempo_execucao = 0;
+	flag_tempo_execucao_pipe = 0;
+
 	// ativar o alarme com o tempo maximo de execucao de uma tarefa
 	signal(SIGALRM, alarme);
 	signal(SIGCHLD, filhoterminou);
@@ -308,6 +315,7 @@ void executarTarefa(char *comandosRecebidos, int numeracaoTarefas){
 
 	puts("FUNCAO EXECUTARTAREFA ");
 	printf("tempo-execucao %d\n",tempo_execucao);
+	printf("contaPipesExecutados %d\n",contaPipesExecutados);
 	printf("Numero de pipes existentes: %d\n",n_pipes);
 
 	puts("Lista definitiva com NULL de comandos sem o pipe");
@@ -402,6 +410,9 @@ void executarTarefa(char *comandosRecebidos, int numeracaoTarefas){
 					kill(pid[i],SIGKILL);
 				}
 			}
+			else{ // se nao acabou por tempo, desarmo o alarme
+				alarm(0);
+			}
 
 			/*
 			waitpid(pid[i],&status,0);
@@ -421,13 +432,13 @@ void executarTarefa(char *comandosRecebidos, int numeracaoTarefas){
 	if(flag_tempo_execucao){ // nao foi executada com exito
 		// colocar no ficheiro de tarefas concluidas
 		puts("NAO EXECUTADA");
-		sprintf(buffer,"#%2d max. execucao: %s",numeracaoTarefas,tarefa);
-		write(fd_tarefasConcluidas,buffer,19+strlen(tarefa));
+		sprintf(buffer,"#%d max. execucao: %s",numeracaoTarefas,tarefa);
+		write(fd_tarefasConcluidas,buffer,18+strlen(tarefa));
 		write(fd_tarefasConcluidas,"\n",1);
 	}
 	else{		// executada com exito
 		sprintf(buffer,"#%d, concluida: %s",numeracaoTarefas,tarefa);
-		write(fd_tarefasConcluidas,buffer,16+strlen(tarefa));
+		write(fd_tarefasConcluidas,buffer,15+strlen(tarefa));
 		write(fd_tarefasConcluidas,"\n",1);
 	}
 
