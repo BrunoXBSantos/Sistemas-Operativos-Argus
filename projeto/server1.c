@@ -32,13 +32,15 @@ char buffer[80];
 int numeracaoTarefas = 0;
 int *pt_numeracaoTarefas = &numeracaoTarefas;
 
-int tempo_execucao = 5; // tempo maximo de execucao de uma tarefa
-int tempo_execucao_pipe = 2;
+int tempo_execucao = 7; // tempo maximo de execucao de uma tarefa
+int tempo_inatividade = 4;
 
-int flag_tempo_execucao_pipe = 0;  // se 0 o tempo de execucao não chegou ao fim. Se 1 chegou ao fim
-int flag_tempo_execucao = 0; // se 0 o tempo de execucao não chegou ao fim. Se 1 chegou ao fim
+int flag_tempo_execucao = 0;  // se 0 o tempo de execucao não chegou ao fim. Se 1 chegou ao fim
+int flag_tempo_inatividade = 0; // se 0 o tempo de execucao não chegou ao fim. Se 1 chegou ao fim
 int fd_tarefasConcluidas;
 int contaPipesExecutados = 1;
+int tempo = 0;
+int filhoMorreu = 0;
 
 
 typedef struct idtarefa{
@@ -133,9 +135,6 @@ int main(int argc, char *argv[]){
 	int i = 0;
 
 	fd_tarefasConcluidas = open("lista-tarefas-concluidas.txt", O_RDWR | O_CREAT, 0644);
-
-	signal(SIGCHLD, filhoterminou);
-
 	// Declaracao de variaveis 
 	
 	int  n;
@@ -158,16 +157,16 @@ int main(int argc, char *argv[]){
 	while((n=read(fd_fifo1,comandosRecebidos,1024)) > 0  || 1){
 		int pid;
 		if(n>0){
-				printf("tempo-execucao %d\n",tempo_execucao);
+				comandosRecebidos[n]='\0';
+				printf("recebido: %s -- %d\n",comandosRecebidos,n);
 				pid = fork();
 				if(pid==0){
 					puts("FUNCAO PRINCIPAL");
-					printf("pid do filho %d\n",getpid());
 					comunicacao(comandosRecebidos);
 					puts("finish da tarefinha");
-					puts(comandosRecebidos);
 					strcpy(comandosRecebidos,"");
-					puts(comandosRecebidos);
+					printf("tempo-execucao %d\n",tempo_execucao);
+					printf("tempo_inatividade definitivo: %d\n",tempo_inatividade);
 					puts("DEBUGGGGGGGG\n\n\n\n");					
 				}
 				wait(NULL);
@@ -194,7 +193,7 @@ void comunicacao(char comandosRecebidos[80]){
 	puts("FUNCAO COMUNICACAO ");
 	printf("%d\n",strlen(comandosRecebidos));
 	comandosRecebidos[strlen(comandosRecebidos)-1] = '\0';
-	puts(comandosRecebidos);
+	printf("Comandos recebidos %s\nEsta linha nao faz parte\n",comandosRecebidos);
 
 	strcpy(buffer,comandosRecebidos);	
 	
@@ -204,8 +203,11 @@ void comunicacao(char comandosRecebidos[80]){
 	printf("primeira palavra: %s\n",primeiraPalavra);
 	printf("tamanho primeira palavra: %d\n",strlen(primeiraPalavra));
 
-	if(strcmp(primeiraPalavra,"tempo-inactividade") == 0){
-		printf("tempo-inactividade\n");
+	if(strcmp(primeiraPalavra,"tempo-inatividade") == 0){
+		puts("SECÇAO TEMPO-INATIVIDADE");
+		strcpy(buffer,comandosRecebidos);
+		tempo_inatividade = atoi(getSegundaPalavra(buffer));
+		printf("tempo_inatividade definitivo: %d\n",tempo_inatividade);
 	}
 	else if(strcmp(primeiraPalavra,"tempo-execucao") == 0){
 		puts("SECÇAO TEMPO-EXECUCAO");
@@ -267,13 +269,27 @@ void historico(){
 }
 
 void alarme(int sig){
-	flag_tempo_execucao = 1;
+	int j;
+	tempo+=1;
+	if(tempo >= tempo_execucao){
+		flag_tempo_execucao = 1;
+		alarm(0);
+	}
+	else if(tempo >= contaPipesExecutados * tempo_inatividade){
+		flag_tempo_inatividade = 1;
+		alarm(0);
+	}
+	else{
+		printf("tempo: %d flag_execucaoTarefa: %d flag_tempo_inatividade: %d\n",tempo,flag_tempo_execucao,flag_tempo_inatividade);
+		alarm(1);
+	} 	
+
 }
 
 void filhoterminou(int sig){
 	int pid; 
-	pid = wait(NULL);
 	contaPipesExecutados++;
+	filhoMorreu=1;
 }
 
 void executarTarefa(char *comandosRecebidos, int numeracaoTarefas){
@@ -284,23 +300,24 @@ void executarTarefa(char *comandosRecebidos, int numeracaoTarefas){
 	int n_pipes = 0;
 	int fd[10][2], pid[10];
 	int flag = 0,j;
-	int fd1 = open("teste.txt",O_CREAT | O_RDWR, 0644);
 	int flag_execucaoTarefa = 0;
 	int status;
 
 	contaPipesExecutados = 1;
 	flag_tempo_execucao = 0;
-	flag_tempo_execucao_pipe = 0;
+	flag_tempo_inatividade = 0;
+	filhoMorreu = 0;
+	tempo = 0;
+
 
 	// ativar o alarme com o tempo maximo de execucao de uma tarefa
 	signal(SIGALRM, alarme);
 	signal(SIGCHLD, filhoterminou);
-	alarm(tempo_execucao);
+	
+
 
 	char tarefa[80] = "";
 	strcpy(tarefa,comandosRecebidos);
-
-	
 
 	/* coloca as palavras num array de strings*/
 	n_tokens = separarComandos(comandos,comandosRecebidos);
@@ -315,6 +332,7 @@ void executarTarefa(char *comandosRecebidos, int numeracaoTarefas){
 
 	puts("FUNCAO EXECUTARTAREFA ");
 	printf("tempo-execucao %d\n",tempo_execucao);
+	printf("tempo-inatividade %d\n",tempo_inatividade);
 	printf("contaPipesExecutados %d\n",contaPipesExecutados);
 	printf("Numero de pipes existentes: %d\n",n_pipes);
 
@@ -341,7 +359,10 @@ void executarTarefa(char *comandosRecebidos, int numeracaoTarefas){
 		}
 	}
 
-	for(i=0;i<n_pipes+1 && !flag_execucaoTarefa;i++){
+	
+	alarm(1); // ativa o contador
+
+	for(i=0;i<n_pipes+1 && !flag_tempo_execucao && !flag_tempo_inatividade;i++){
 		if((pid[i]=fork()) == -1){
 			sprintf(buffer, "Erro no fork %d",i+1);
 			perror(buffer);
@@ -402,18 +423,26 @@ void executarTarefa(char *comandosRecebidos, int numeracaoTarefas){
 		}
 		else{
 			close(fd[i][1]);
-			pause();
-			printf("flag_tempo_execucao %d\n", flag_tempo_execucao);
-			printf("contaPipesExecutados %d\n", contaPipesExecutados);
-			if(flag_tempo_execucao==1){
-				for(i=0;i<contaPipesExecutados;i++){
-					kill(pid[i],SIGKILL);
-				}
+			while(!filhoMorreu && !flag_tempo_inatividade && !flag_tempo_execucao){
+				pause();
 			}
-			else{ // se nao acabou por tempo, desarmo o alarme
+			filhoMorreu = 0;
+
+			char tt[30];
+			sprintf(tt,"flag_tempo_execucao %d\n",flag_tempo_execucao);
+			write(1,tt,22);
+			sprintf(tt,"flag_tempo_inatividade %d\n",flag_tempo_inatividade);
+			write(1,tt,25);
+			sprintf(tt,"contaPipesExecutados %d\n",contaPipesExecutados);
+			write(1,tt,23);
+			if(flag_tempo_execucao==1){
+				kill(pid[i],SIGKILL);
 				alarm(0);
 			}
-
+			else if(flag_tempo_inatividade == 1){
+				kill(pid[i],SIGKILL);
+				alarm(0);
+			}
 			/*
 			waitpid(pid[i],&status,0);
 			if(WEXITSTATUS(status) == -1 || !WIFEXITED(status)){
@@ -423,6 +452,8 @@ void executarTarefa(char *comandosRecebidos, int numeracaoTarefas){
 		}
 	}	
 	
+	alarm(0);
+
 	// remover tarefa pendente
 	removerTarefaListaExecucao(&tarefasExecucao, numeracaoTarefas);
 	puts(tarefa);
@@ -431,9 +462,16 @@ void executarTarefa(char *comandosRecebidos, int numeracaoTarefas){
 	printf("flag_tempo_execucao %d\n", flag_tempo_execucao);
 	if(flag_tempo_execucao){ // nao foi executada com exito
 		// colocar no ficheiro de tarefas concluidas
-		puts("NAO EXECUTADA");
-		sprintf(buffer,"#%d max. execucao: %s",numeracaoTarefas,tarefa);
-		write(fd_tarefasConcluidas,buffer,18+strlen(tarefa));
+		puts("NAO EXECUTADA devi ao tempo-execucao");
+		sprintf(buffer,"#%d, max. execucao: %s",numeracaoTarefas,tarefa);
+		write(fd_tarefasConcluidas,buffer,19+strlen(tarefa));
+		write(fd_tarefasConcluidas,"\n",1);
+	}
+	else if(flag_tempo_inatividade){
+		// colocar no ficheiro de tarefas concluidas
+		puts("NAO EXECUTADA devido ao tempo de execucao de um pipe");
+		sprintf(buffer,"#%d, max. inactividade: %s",numeracaoTarefas,tarefa);
+		write(fd_tarefasConcluidas,buffer,23+strlen(tarefa));
 		write(fd_tarefasConcluidas,"\n",1);
 	}
 	else{		// executada com exito
