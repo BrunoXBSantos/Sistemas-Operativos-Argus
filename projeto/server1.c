@@ -23,6 +23,7 @@ char *getPrimeiraPalavra(char buffer[80]);
 void historico();
 int readln(int fildes, char *buf, int nbyte);
 void filhoterminou(int sig);
+char *getSegundaPalavra(char q[80]);
 
 char *fifo1 = "/tmp/fifo1";  // FIFO file path
 char *fifo2 = "/tmp/fifo2";
@@ -154,6 +155,7 @@ int main(int argc, char *argv[]){
 	while((n=read(fd_fifo1,comandosRecebidos,1024)) > 0  || 1){
 		int pid;
 		if(n>0){
+				printf("tempo-execucao %d\n",tempo_execucao);
 				pid = fork();
 				if(pid==0){
 					puts("FUNCAO PRINCIPAL");
@@ -163,25 +165,30 @@ int main(int argc, char *argv[]){
 					puts(comandosRecebidos);
 					strcpy(comandosRecebidos,"");
 					puts(comandosRecebidos);
-					puts("DEBUGGGGGGGG\n\n\n\n");
-					
-					
+					puts("DEBUGGGGGGGG\n\n\n\n");					
 				}
-				i++;
-					
+				wait(NULL);
 		}
-		wait(NULL);
+		
 	}
 }
 
-
+char *getSegundaPalavra(char q[80]){
+	const char s[2] = " ";
+	char *token;
+	/* get the first token */
+	token = strtok(q, s);
+	/* get the second token*/
+	token = strtok(NULL, s);
+	return token;
+}
 
 void comunicacao(char comandosRecebidos[80]){
 	
 	char *primeiraPalavra;
 	int n, numeroTarefaAtual;
 
-	puts("FUNCAO comunicacao ");
+	puts("FUNCAO COMUNICACAO ");
 	printf("%d\n",strlen(comandosRecebidos));
 	comandosRecebidos[strlen(comandosRecebidos)-1] = '\0';
 	puts(comandosRecebidos);
@@ -198,7 +205,11 @@ void comunicacao(char comandosRecebidos[80]){
 		printf("tempo-inactividade\n");
 	}
 	else if(strcmp(primeiraPalavra,"tempo-execucao") == 0){
-		printf("tempo-execucao\n");
+		puts("SECÇAO TEMPO-EXECUCAO");
+		strcpy(buffer,comandosRecebidos);
+		tempo_execucao = atoi(getSegundaPalavra(buffer));
+		printf("tempo_execucao defenitivo: %d\n",tempo_execucao);
+		
 	}
 	else if(strcmp(primeiraPalavra,"executar") == 0){
 		char temp[17];
@@ -228,7 +239,6 @@ void comunicacao(char comandosRecebidos[80]){
 	}
 	else if(strcmp(primeiraPalavra,"historico") == 0){
 		historico();
-
 	}
 
 	else if(strcmp(primeiraPalavra,"ajuda") == 0){
@@ -296,7 +306,8 @@ void executarTarefa(char *comandosRecebidos, int numeracaoTarefas){
 	/* coloca em comandos2 a lista definitiva de comandos a executar*/
 	n_pipes = separarComandos2(comandos,comandos2,n_tokens);
 
-	puts("FUNCAO executarTarefa ");
+	puts("FUNCAO EXECUTARTAREFA ");
+	printf("tempo-execucao %d\n",tempo_execucao);
 	printf("Numero de pipes existentes: %d\n",n_pipes);
 
 	puts("Lista definitiva com NULL de comandos sem o pipe");

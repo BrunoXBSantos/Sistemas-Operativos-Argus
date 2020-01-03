@@ -10,6 +10,7 @@ char * concatenaString(char *argv[], char *buffer, int total);
 void comunicacao();
 char *getPrimeiraPalavra(char q[80]);
 void historico();
+void ajuda();
 
 int fd1, fd2;
 const char *prompt = "argus$ ";
@@ -74,7 +75,8 @@ void comunicacao(){
 				printf("tempo-inactividade\n");
 			}
 			else if(strcmp(primeiraPalavra,"tempo-execucao") == 0){
-				printf("tempo-execucao\n");
+				write(fd1,fraseLida,n);
+				strcpy(fraseLida,"");;
 			}
 			else if(strcmp(primeiraPalavra,"executar") == 0){
 				write(fd1,fraseLida,n);
@@ -95,7 +97,9 @@ void comunicacao(){
 			}
 
 			else if(strcmp(primeiraPalavra,"ajuda") == 0){
-				printf("ajuda\n");
+				write(fd1,fraseLida,n);
+				strcpy(fraseLida,"");
+				ajuda();
 			}
 	
 		}
@@ -103,6 +107,17 @@ void comunicacao(){
 	}
 	while(!flag);
 	printf("Muito obrigado por utilizado o nosso servico\n");
+}
+
+// ver lista ajudas
+void ajuda(){
+	int n, fd;
+	char temp[50];
+	fd=open("ajuda.txt",O_RDWR);
+	while((n=readln(fd,temp,50)) > 0){
+		write(1,temp,n);
+	}
+	write(1,temp,n);
 }
 
 // ver lista de tarefas executadas
