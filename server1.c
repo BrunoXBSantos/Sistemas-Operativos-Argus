@@ -22,6 +22,10 @@ void executarTarefa();
 char *getPrimeiraPalavra(char buffer[80]);
 void historico();
 int readln(int fildes, char *buf, int nbyte);
+void filhoterminou(int sig);
+char *getSegundaPalavra(char q[80]);
+void filhoPrincipalTerminou(int sig);
+void listarTeste();
 
 char *fifo1 = "/tmp/fifo1";  // FIFO file path
 char *fifo2 = "/tmp/fifo2";
@@ -29,25 +33,33 @@ int fd_log, fd_fifo1, fd_fifo2;
 char buffer[80];
 int numeracaoTarefas = 0;
 int *pt_numeracaoTarefas = &numeracaoTarefas;
-int tempo_execucao = 20; // tempo maximo de execucao de uma tarefa
-int flag_tempo_execucao = 0; // se 0 o tempo de execucao não chegou ao fim. Se 1 chegou ao fim
 
+int tempo_execucao = 100; // tempo maximo de execucao de uma tarefa
+int tempo_inatividade = 100;
+
+int flag_tempo_execucao = 0;  // se 0 o tempo de execucao não chegou ao fim. Se 1 chegou ao fim
+int flag_tempo_inatividade = 0; // se 0 o tempo de execucao não chegou ao fim. Se 1 chegou ao fim
 int fd_tarefasConcluidas;
+int contaPipesExecutados = 1;
+int tempo = 0;
+int filhoMorreu = 0;
 
 
 typedef struct idtarefa{
-	int identificacao;
+	int identificacaoTarefa;
 	char tarefa[80];
+	int pidTarefa;
 	struct idtarefa *prox;
 } *LLista;
 
 // criar um novo elemento da lista ligada, que no contexto do problema e um artigo
 // Devolve o endereco do elemento criado em caso de sucesso, em caso de insucesso, devolve NULL
-LLista criarElemento(int identificacao, char tarefaAdicionar[80]){
+LLista criarElemento(int identificacaoTarefa, char tarefaAdicionar[80], int pidTarefa){
 	LLista novaTarefa = (LLista) malloc(sizeof(struct idtarefa));
 	if(novaTarefa!=NULL){
-		(novaTarefa->identificacao)=identificacao;
+		(novaTarefa->identificacaoTarefa)=identificacaoTarefa;
 		strcpy((novaTarefa->tarefa),tarefaAdicionar);
+		(novaTarefa->pidTarefa) = pidTarefa;
 		novaTarefa->prox = NULL;
 	}
 	return novaTarefa;
@@ -58,7 +70,7 @@ LLista criarElemento(int identificacao, char tarefaAdicionar[80]){
 // Devolve o endereco do artigo se encontrar a sua referencia. Devolve NULL caso a referencia nao existe na
 //lista
 LLista procurar(LLista l, int refe){
-	while(l!=NULL && (l->identificacao) != refe)
+	while(l!=NULL && (l->identificacaoTarefa) != refe)
 		l=l->prox;
 	return l;
 }
@@ -68,11 +80,25 @@ void listar(LLista l){
 	char temp[105];
 	
 	while(l!=NULL && (l->prox) != NULL){
-		sprintf(temp, "#%2d, concluida: %s",l->identificacao,l->tarefa);
+		sprintf(temp, "#%2d, concluida: %s",l->identificacaoTarefa,l->tarefa);
 		write(fd_fifo2,temp,17+strlen(l->tarefa));
-		printf("%d %s\n",l->identificacao, l->tarefa);
+		printf("%d %s\n",l->identificacaoTarefa, l->tarefa);
 		l=l->prox;
 	}
+}
+
+void listarTeste(LLista *l){
+	char temp[100]="";
+	LLista p = (*l);
+	while((p)!=NULL){
+		sprintf(temp,"#%d: %s\n",(p)->identificacaoTarefa,(p)->tarefa);
+		write(fd_fifo2,temp,5+strlen(temp));
+		printf("ENVIADA: %s - %d\n",temp,strlen(temp));
+		printf("#%d - %s - %d\n",(p->identificacaoTarefa),(p->tarefa), (p->pidTarefa));
+		(p)=(p)->prox;
+	}
+	write(1,"FIM TRANSMISSAO\n",17);
+	write(fd_fifo2,"FIM TRANSMISSAO",16);
 }
 
 // Insere um artigo na lista.
@@ -80,8 +106,11 @@ void listar(LLista l){
 // Devolve, -1 se nao conseguir criar o artigo. 0 se o artigo ja exitir em stock(atualiza o stock). 1 se
 //for criado um novo artigo.
 
-int inserirElementoLista(LLista *l,int identificacao, char tarefaAdicionar[80]){
-	LLista p = NULL, novo = criarElemento(identificacao,tarefaAdicionar);
+int inserirElementoLista(LLista *l,int identificacaoTarefa, char tarefaAdicionar[80], int pidTarefa){
+	LLista p = NULL, novo = criarElemento(identificacaoTarefa,tarefaAdicionar,pidTarefa);
+	printf("ELEMENTO CRIADO\n");
+	printf("#%d - %s - %d\n",novo->identificacaoTarefa,novo->tarefa, novo->pidTarefa);
+
 	if(novo==NULL){
 		;
 	}
@@ -89,29 +118,33 @@ int inserirElementoLista(LLista *l,int identificacao, char tarefaAdicionar[80]){
 		(*l)=novo;
 		return 1;
 	}
-	p=procurar((*l), identificacao-1);
-	p->prox=novo; 
+	while((*l)->prox != NULL) ;
+	(*l)->prox = novo;
 	return 1;
 
 }
 
-int removerTarefaListaExecucao(LLista *l, int identificacao){
+int removerTarefaListaExecucao(LLista *l, int pidTarefa){
+	printf("REMOVER TAREFA %d\n",pidTarefa);
 	LLista p=(*l), q=NULL;
+		printf("Primeira TAREFa:  %d - %s - %d\n",p->identificacaoTarefa,p->tarefa,p->pidTarefa);
+
 	if(*l == NULL)
 		return 0;
-	if(((*l)->identificacao) == identificacao){
+	if(((*l)->pidTarefa) == pidTarefa){
+		printf("Tarefa para remover encontrada: %d - %s - %d\n",p->identificacaoTarefa,p->tarefa,p->pidTarefa);
 		(*l)=(*l)->prox;
 		free(p);
 		return 1;
 	}
 	q=(*l)->prox;
-	while(q!=NULL && identificacao > (q->identificacao)){
+	while(q!=NULL && pidTarefa != (q->pidTarefa)){
 		p=q;
 		q=q->prox;
 	}
 	if(q!=NULL){
-		p->prox;
-		q->prox;
+		printf("Tarefa para remover encontrada: %d - %s - %d\n",q->identificacaoTarefa,q->tarefa,q->pidTarefa);
+		p->prox=q->prox;
 		free(q);
 		return 1;
 	}
@@ -121,22 +154,12 @@ int removerTarefaListaExecucao(LLista *l, int identificacao){
 // Inicializacao das listas ligadas
 LLista tarefasExecucao = NULL;
 
-void filhoterminou() {
-	int j;
-	j=wait(NULL);
-	puts("FILHO TERMINOU");
-	printf("pid do filho %d\n",j);
-}
-
 int main(int argc, char *argv[]){
 
 	int pid[10];
 	int i = 0;
 
 	fd_tarefasConcluidas = open("lista-tarefas-concluidas.txt", O_RDWR | O_CREAT, 0644);
-
-	signal(SIGCHLD, filhoterminou);
-
 	// Declaracao de variaveis 
 	
 	int  n;
@@ -159,37 +182,48 @@ int main(int argc, char *argv[]){
 	while((n=read(fd_fifo1,comandosRecebidos,1024)) > 0  || 1){
 		int pid;
 		if(n>0){
-				pid = fork();
-				if(pid==0){
-					puts("FUNCAO PRINCIPAL");
-					printf("pid do filho %d\n",getpid());
-					comunicacao(comandosRecebidos);
-					puts("finish da tarefinha");
-					puts(comandosRecebidos);
-					strcpy(comandosRecebidos,"");
-					puts(comandosRecebidos);
-					puts("DEBUGGGGGGGG\n\n\n\n");
-					
-					
-				}
-				i++;
-					
+			comandosRecebidos[n]='\0';
+			printf("recebido: %s -- %d\n",comandosRecebidos,n);
+			puts("FUNCAO PRINCIPAL");
+			comunicacao(comandosRecebidos);
+			strcpy(comandosRecebidos,"");
+			printf("tempo-execucao %d\n",tempo_execucao);
+			printf("tempo_inatividade definitivo: %d\n",tempo_inatividade);
+			puts("DEBUGGGGGGGG\n\n\n\n");					
 		}
-		wait(NULL);
+		
 	}
 }
 
+char *getSegundaPalavra(char q[80]){
+	const char s[2] = " ";
+	char *token;
+	/* get the first token */
+	token = strtok(q, s);
+	/* get the second token*/
+	token = strtok(NULL, s);
+	return token;
+}
 
+void filhoPrincipalTerminou(int sig){
+	printf("Funcao filhoPrincipalTerminou\n");
+	int j;
+	j=wait(NULL);
+	printf("PID do filho que terminou %d\n",j);
+	removerTarefaListaExecucao(&tarefasExecucao,j);
+}
 
 void comunicacao(char comandosRecebidos[80]){
 	
 	char *primeiraPalavra;
-	int n, numeroTarefaAtual;
+	int n;
 
-	puts("FUNCAO comunicacao ");
+	signal(SIGCHLD, filhoPrincipalTerminou);
+
+	puts("FUNCAO COMUNICACAO ");
 	printf("%d\n",strlen(comandosRecebidos));
 	comandosRecebidos[strlen(comandosRecebidos)-1] = '\0';
-	puts(comandosRecebidos);
+	printf("Comandos recebidos %s\nEsta linha nao faz parte\n",comandosRecebidos);
 
 	strcpy(buffer,comandosRecebidos);	
 	
@@ -199,41 +233,55 @@ void comunicacao(char comandosRecebidos[80]){
 	printf("primeira palavra: %s\n",primeiraPalavra);
 	printf("tamanho primeira palavra: %d\n",strlen(primeiraPalavra));
 
-	if(strcmp(primeiraPalavra,"tempo-inactividade") == 0){
-		printf("tempo-inactividade\n");
+	if(strcmp(primeiraPalavra,"tempo-inatividade") == 0){
+		puts("SECÇAO TEMPO-INATIVIDADE");
+		strcpy(buffer,comandosRecebidos);
+		tempo_inatividade = atoi(getSegundaPalavra(buffer));
+		printf("tempo_inatividade definitivo: %d\n",tempo_inatividade);
 	}
 	else if(strcmp(primeiraPalavra,"tempo-execucao") == 0){
-		printf("tempo-execucao\n");
+		puts("SECÇAO TEMPO-EXECUCAO");
+		strcpy(buffer,comandosRecebidos);
+		tempo_execucao = atoi(getSegundaPalavra(buffer));
+		printf("tempo_execucao defenitivo: %d\n",tempo_execucao);
+		
 	}
 	else if(strcmp(primeiraPalavra,"executar") == 0){
 		char temp[17];
-		
-		/* Atribui a identificaçao da tarefa */
-		(*pt_numeracaoTarefas)+=1;
-		numeroTarefaAtual = (*pt_numeracaoTarefas);
-		printf("Numero da tarefa a ser executada: %d  %d\n",numeroTarefaAtual,(*pt_numeracaoTarefas));
+		numeracaoTarefas++;
+		printf("Numero da tarefa a ser executada: %d\n",numeracaoTarefas);
 		
 		/*	Envia para o argus o numero da tarefa a ser executada */
-		sprintf(temp, "nova tarefa #%2d\n",numeroTarefaAtual);
+		sprintf(temp, "nova tarefa #%2d\n",numeracaoTarefas);
 		write(fd_fifo2,temp,17);
 		
-		/* Coloca na lista de tarefas a serem executadas */
-		inserirElementoLista(&tarefasExecucao,numeroTarefaAtual,&(comandosRecebidos[strlen(primeiraPalavra)+1]));
-
-
 		printf("%s\n",&(comandosRecebidos[strlen(primeiraPalavra)+1]));
-		executarTarefa(&(comandosRecebidos[strlen(primeiraPalavra)+1]),numeroTarefaAtual);
+		int pid = fork();
+
+		if(pid == 0){
+			printf("ESTE é o meu PID: %d\n\n",getpid());
+			executarTarefa(&(comandosRecebidos[strlen(primeiraPalavra)+1]),numeracaoTarefas);
+		}
 		
+		/* Coloca na lista de tarefas a serem executadas */
+		inserirElementoLista(&tarefasExecucao,numeracaoTarefas,&(comandosRecebidos[strlen(primeiraPalavra)+1]), pid);
+
 	}
 	else if(strcmp(primeiraPalavra,"listar") == 0){
-		printf("listar\n");
+		printf("LISTAR EM EXECUCAO\n");
+		
+		int cpid = fork();
+		if(cpid==0){
+			listarTeste(&tarefasExecucao);
+		}
+		wait(NULL);
+		
 	}
 	else if(strcmp(primeiraPalavra,"terminar") == 0){
 		printf("terminar\n");
 	}
 	else if(strcmp(primeiraPalavra,"historico") == 0){
 		historico();
-
 	}
 
 	else if(strcmp(primeiraPalavra,"ajuda") == 0){
@@ -259,7 +307,27 @@ void historico(){
 }
 
 void alarme(int sig){
-	flag_tempo_execucao = 1;
+	int j;
+	tempo+=1;
+	if(tempo >= tempo_execucao){
+		flag_tempo_execucao = 1;
+		alarm(0);
+	}
+	else if(tempo >= contaPipesExecutados * tempo_inatividade){
+		flag_tempo_inatividade = 1;
+		alarm(0);
+	}
+	else{
+		printf("tempo: %d flag_execucaoTarefa: %d flag_tempo_inatividade: %d\n",tempo,flag_tempo_execucao,flag_tempo_inatividade);
+		alarm(1);
+	} 	
+
+}
+
+void filhoterminou(int sig){
+	int pid; 
+	contaPipesExecutados++;
+	filhoMorreu=1;
 }
 
 void executarTarefa(char *comandosRecebidos, int numeracaoTarefas){
@@ -270,18 +338,24 @@ void executarTarefa(char *comandosRecebidos, int numeracaoTarefas){
 	int n_pipes = 0;
 	int fd[10][2], pid[10];
 	int flag = 0,j;
-	int fd1 = open("teste.txt",O_CREAT | O_RDWR, 0644);
 	int flag_execucaoTarefa = 0;
 	int status;
 
+	contaPipesExecutados = 1;
+	flag_tempo_execucao = 0;
+	flag_tempo_inatividade = 0;
+	filhoMorreu = 0;
+	tempo = 0;
+
+
 	// ativar o alarme com o tempo maximo de execucao de uma tarefa
 	signal(SIGALRM, alarme);
-	alarm(tempo_execucao);
+	signal(SIGCHLD, filhoterminou);
+	
+
 
 	char tarefa[80] = "";
 	strcpy(tarefa,comandosRecebidos);
-
-	
 
 	/* coloca as palavras num array de strings*/
 	n_tokens = separarComandos(comandos,comandosRecebidos);
@@ -294,7 +368,10 @@ void executarTarefa(char *comandosRecebidos, int numeracaoTarefas){
 	/* coloca em comandos2 a lista definitiva de comandos a executar*/
 	n_pipes = separarComandos2(comandos,comandos2,n_tokens);
 
-	puts("FUNCAO executarTarefa ");
+	puts("FUNCAO EXECUTARTAREFA ");
+	printf("tempo-execucao %d\n",tempo_execucao);
+	printf("tempo-inatividade %d\n",tempo_inatividade);
+	printf("contaPipesExecutados %d\n",contaPipesExecutados);
 	printf("Numero de pipes existentes: %d\n",n_pipes);
 
 	puts("Lista definitiva com NULL de comandos sem o pipe");
@@ -320,7 +397,10 @@ void executarTarefa(char *comandosRecebidos, int numeracaoTarefas){
 		}
 	}
 
-	for(i=0;i<n_pipes+1 && !flag_execucaoTarefa;i++){
+	
+	alarm(1); // ativa o contador
+
+	for(i=0;i<n_pipes+1 && !flag_tempo_execucao && !flag_tempo_inatividade;i++){
 		if((pid[i]=fork()) == -1){
 			sprintf(buffer, "Erro no fork %d",i+1);
 			perror(buffer);
@@ -381,33 +461,64 @@ void executarTarefa(char *comandosRecebidos, int numeracaoTarefas){
 		}
 		else{
 			close(fd[i][1]);
+			while(!filhoMorreu && !flag_tempo_inatividade && !flag_tempo_execucao){
+				pause();
+			}
+			filhoMorreu = 0;
+
+			char tt[30];
+			sprintf(tt,"flag_tempo_execucao %d\n",flag_tempo_execucao);
+			write(1,tt,22);
+			sprintf(tt,"flag_tempo_inatividade %d\n",flag_tempo_inatividade);
+			write(1,tt,25);
+			sprintf(tt,"contaPipesExecutados %d\n",contaPipesExecutados);
+			write(1,tt,23);
+			if(flag_tempo_execucao==1){
+				kill(pid[i],SIGKILL);
+				alarm(0);
+			}
+			else if(flag_tempo_inatividade == 1){
+				kill(pid[i],SIGKILL);
+				alarm(0);
+			}
+			/*
 			waitpid(pid[i],&status,0);
 			if(WEXITSTATUS(status) == -1 || !WIFEXITED(status)){
 				flag_execucaoTarefa=1;
 			}
+			*/
 		}
 	}	
 	
-	// remover tarefa pendente
-	removerTarefaListaExecucao(&tarefasExecucao, numeracaoTarefas);
+	alarm(0);
 	puts(tarefa);
 	
 	// colocar no ficheiro de tarefas concluidas
-	if(flag_execucaoTarefa == 1){ // nao foi executada com exito
-		sprintf(buffer,"Tarefa #%2d executada sem exito",numeracaoTarefas);
-
+	printf("flag_tempo_execucao %d\n", flag_tempo_execucao);
+	if(flag_tempo_execucao){ // nao foi executada com exito
 		// colocar no ficheiro de tarefas concluidas
-		sprintf(buffer,"#%d, erro ao executar: %s",numeracaoTarefas,tarefa);
-		write(fd_tarefasConcluidas,buffer,22+strlen(tarefa));
+		puts("NAO EXECUTADA devi ao tempo-execucao");
+		sprintf(buffer,"#%d, max. execucao: %s",numeracaoTarefas,tarefa);
+		write(fd_tarefasConcluidas,buffer,19+strlen(tarefa));
+		write(fd_tarefasConcluidas,"\n",1);
+	}
+	else if(flag_tempo_inatividade){
+		// colocar no ficheiro de tarefas concluidas
+		puts("NAO EXECUTADA devido ao tempo de execucao de um pipe");
+		sprintf(buffer,"#%d, max. inactividade: %s",numeracaoTarefas,tarefa);
+		write(fd_tarefasConcluidas,buffer,23+strlen(tarefa));
 		write(fd_tarefasConcluidas,"\n",1);
 	}
 	else{		// executada com exito
 		sprintf(buffer,"#%d, concluida: %s",numeracaoTarefas,tarefa);
-		write(fd_tarefasConcluidas,buffer,16+strlen(tarefa));
+		write(fd_tarefasConcluidas,buffer,15+strlen(tarefa));
 		write(fd_tarefasConcluidas,"\n",1);
 	}
 
 	puts("COLOCADO NO FICHEIRO A TAREFA CONCLUIDA");
+
+	write(1,"TAREFA TERMINADA COM SUCESSO\n",30);
+	_exit(0);
 	
 }
 
