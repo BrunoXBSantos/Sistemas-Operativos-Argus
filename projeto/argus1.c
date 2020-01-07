@@ -142,7 +142,8 @@ void iniciaInterpretador(){
 				listar();
 			}
 			else if(strcmp(primeiraPalavra,"terminar") == 0){
-				printf("terminar\n");
+				printf("terminar tarefa\n");
+				write(fd1,fraseLida,n);
 			}
 			else if(strcmp(primeiraPalavra,"historico") == 0){
 				write(fd1,fraseLida,n);
