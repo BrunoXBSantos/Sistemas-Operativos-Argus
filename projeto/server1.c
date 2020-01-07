@@ -42,6 +42,7 @@ char buffer[80];
 int numeracaoTarefas = 0;
 int *pt_numeracaoTarefas = &numeracaoTarefas;
 int pid; // para cada tarefa guardar o seu pid
+int status;
 
 int tempo_execucao = 100; // tempo maximo de execucao de uma tarefa
 int tempo_inatividade = 100;
@@ -49,6 +50,7 @@ int tempo_inatividade = 100;
 int flag_tempo_execucao = 0;  // se 0 o tempo de execucao não chegou ao fim. Se 1 chegou ao fim
 int flag_tempo_inatividade = 0; // se 0 o tempo de execucao não chegou ao fim. Se 1 chegou ao fim
 int flag_tarefa_terminada = 0;
+int flag_erroExecucaoTarefa = 0;
 
 int fd_tarefasConcluidas;
 int contaPipesExecutados = 1;
@@ -175,13 +177,9 @@ LLista tarefasExecucao = NULL;
 
 int main(int argc, char *argv[]){
 
-	int pid[10];
-	int i = 0;
+	int i,n = 0;
 
 	fd_tarefasConcluidas = open("lista-tarefas-concluidas.txt", O_RDWR | O_CREAT, 0644);
-	// Declaracao de variaveis 
-	
-	int  n;
 	char comandosRecebidos[80]="";
 	
 
@@ -349,8 +347,12 @@ void alarme(int sig){
 }
 
 void filhoterminou(int sig){
-	int pid; 
+	int pid = wait(&status); 
 	contaPipesExecutados++;
+	if(WEXITSTATUS(status) == -1 || !WIFEXITED(status)){
+		flag_erroExecucaoTarefa=1;
+	}
+
 	filhoMorreu=1;
 }
 
@@ -433,7 +435,7 @@ void executarTarefa(char *comandosRecebidos, int numeracaoTarefas){
 	
 	alarm(1); // ativa o contador
 
-	for(i=0;i<n_pipes+1 && !flag_tempo_execucao && !flag_tempo_inatividade && !flag_tarefa_terminada ;i++){
+	for(i=0;i<n_pipes+1 && !flag_tempo_execucao && !flag_tempo_inatividade && !flag_tarefa_terminada && !flag_erroExecucaoTarefa ;i++){
 		if((pid=fork()) == -1){
 			sprintf(buffer, "Erro no fork %d",i+1);
 			perror(buffer);
@@ -517,12 +519,10 @@ void executarTarefa(char *comandosRecebidos, int numeracaoTarefas){
 			else if(flag_tarefa_terminada == 1){
 				alarm(0);
 			}
-			/*
-			waitpid(pid[i],&status,0);
-			if(WEXITSTATUS(status) == -1 || !WIFEXITED(status)){
-				flag_execucaoTarefa=1;
+			else if(flag_erroExecucaoTarefa == 1){
+				alarm(0);
 			}
-			*/
+
 		}
 	}	
 	
@@ -550,6 +550,13 @@ void executarTarefa(char *comandosRecebidos, int numeracaoTarefas){
 		puts("Tarefa terminada a meio");
 		sprintf(buffer,"#%d, terminada: %s",numeracaoTarefas,tarefa);
 		write(fd_tarefasConcluidas,buffer,15+strlen(tarefa));
+		write(fd_tarefasConcluidas,"\n",1);
+	}
+	else if(flag_erroExecucaoTarefa){
+		// colocar no ficheiro de tarefas concluidas
+		puts("Erro na tarefa");
+		sprintf(buffer,"#%d, Erro ao executar: %s",numeracaoTarefas,tarefa);
+		write(fd_tarefasConcluidas,buffer,22+strlen(tarefa));
 		write(fd_tarefasConcluidas,"\n",1);
 	}
 	else{		// executada com exito
