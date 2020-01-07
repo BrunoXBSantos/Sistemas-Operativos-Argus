@@ -79,7 +79,8 @@ void enviarComando(char fraseEnviar[80]){
 		listar();
 	}
 	else if(strcmp(primeiraPalavra,"-t") == 0){
-		printf("terminar\n");
+		write(fd1,fraseEnviar,strlen(fraseEnviar));
+		strcpy(fraseEnviar,"");
 	}
 	else if(strcmp(primeiraPalavra,"-r") == 0){
 		write(fd1,fraseEnviar,strlen(fraseEnviar));
@@ -177,39 +178,42 @@ void ajuda(){
 
 // ver lista de tarefas executadas
 void historico(){
-	char temp[80];
+	char temp[1024];
+	char buffer[1024];
 	int n, flag_historico = 0;
 	while(!flag_historico){
-		n=read(fd2,temp,80);
-		if(strcmp(temp,"FIM TRANSMISSAO") == 0){
-			printf("recebido do historico %s\n",temp);
+		n=read(fd2,temp,1024);
+		if(strstr(temp,"FIM") != NULL){
+			write(1,temp,n);
 			flag_historico = 1;
 		}
 		else{
+			sprintf(buffer,"RECEBIDO: %s - %d\n",temp,n);
+			write(1,buffer,strlen(buffer));
 			write(1,temp,n);
 		}
 	}
 }
+/*
 
+*/
 
 void listar(){
-	char temp[80];
-	char buffer[100];
-	int n=1, flag_listar=0;
-	while(!flag_listar && n!=0){
-		n=read(fd2,temp,80);
-		temp[n]='\0';
-		if(strcmp(temp,"FIM TRANSMISSAO") == 0){
+	char temp[1024] = "";
+	char buffer[1024];
+	int n, flag_listar=0;
+	while(!flag_listar){
+		n=read(fd2,temp,1024);
+		if(strstr(temp,"FIM ") != NULL){
 			write(1,temp,n);
-			write(1,"DETETOU O FIM\n",14);
 			flag_listar=1;
 		}
 		else{
-			sprintf(buffer,"Recebido: %s - %d\n",temp,n);
-			write(1,buffer,15+strlen(temp));
 			write(1,temp,n);
-			write(1,"PAOUUUUU\n",9);
+			printf("%d\n",n);
+			printf("%s\n", temp);
 		}
+		memset(temp,0,sizeof(temp));
 	}
 }
 

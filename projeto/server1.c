@@ -32,7 +32,7 @@ int readln(int fildes, char *buf, int nbyte);
 void filhoterminou(int sig);
 char *getSegundaPalavra(char q[80]);
 void filhoPrincipalTerminou(int sig);
-void listarTeste();
+int listarTeste();
 int getPidTarefaExecucao(LLista *l, int numeroTarefaTerminar);
 
 char *fifo1 = "/tmp/fifo1";  // FIFO file path
@@ -94,18 +94,31 @@ void listar(LLista l){
 	}
 }
 
-void listarTeste(LLista *l){
-	char temp[100]="";
+int listarTeste(LLista *l){
+	char temp[1024]="";
 	LLista p = (*l);
-	while((p)!=NULL){
-		sprintf(temp,"#%d: %s\n",(p)->identificacaoTarefa,(p)->tarefa);
-		write(fd_fifo2,temp,5+strlen(temp));
-		printf("ENVIADA: %s - %d\n",temp,strlen(temp));
-		printf("#%d - %s - %d\n",(p->identificacaoTarefa),(p->tarefa), (p->pidTarefa));
-		(p)=(p)->prox;
+	if(p==NULL){
+		write(fd_fifo2,"Nenhuma Tarefa em execucao\nFIM TRANSMISSAO\n",44);
+		return 1;
 	}
-	write(1,"FIM TRANSMISSAO\n",17);
-	write(fd_fifo2,"FIM TRANSMISSAO",16);
+	else{
+		while((p)!=NULL){
+			if((p->prox) == NULL){
+				sprintf(temp,"#%d: %s\nFIM TRANSMISSAO\n",(p)->identificacaoTarefa,(p)->tarefa);
+				write(fd_fifo2,temp,strlen(temp)+1);
+				printf("ENVIADA: %s - %d\n",temp,strlen(temp)+1);
+				printf("#%d - %s - %d\n",(p->identificacaoTarefa),(p->tarefa), (p->pidTarefa));
+			}
+			else{
+				sprintf(temp,"#%d: %s\n",(p)->identificacaoTarefa,(p)->tarefa);
+				write(fd_fifo2,temp,strlen(temp)+1);
+				printf("ENVIADA: %s - %d\n",temp,strlen(temp));
+				printf("#%d - %s - %d\n",(p->identificacaoTarefa),(p->tarefa), (p->pidTarefa));
+			}
+			(p)=(p)->prox;
+		}
+		return 1;
+	}
 }
 
 // Insere um artigo na lista.
@@ -235,7 +248,7 @@ void filhoPrincipalTerminou(int sig){
 void comunicacao(char comandosRecebidos[80]){
 	
 	char *primeiraPalavra;
-	int n, numeroTarefaTerminar, pidTarefaTerminar;
+	int n, o, numeroTarefaTerminar, pidTarefaTerminar;
 
 	signal(SIGCHLD, filhoPrincipalTerminou);
 
@@ -289,7 +302,7 @@ void comunicacao(char comandosRecebidos[80]){
 	else if((strcmp(primeiraPalavra,"listar") == 0) || (strcmp(primeiraPalavra,"-l") == 0)){
 		printf("LISTAR EM EXECUCAO\n");
 	
-		listarTeste(&tarefasExecucao);
+		o = listarTeste(&tarefasExecucao);
 	
 		
 	}
@@ -308,23 +321,18 @@ void comunicacao(char comandosRecebidos[80]){
 	else if((strcmp(primeiraPalavra,"ajuda") == 0) || (strcmp(primeiraPalavra,"-h") == 0)){
 		printf("ajuda\n");
 	}
-
-	// executar grep -v ˆ# /etc/passwd | cut -f7 -d: | uniq | wc -l
-
-
 	
 }
 
 
 void historico(){
-	char temp[80]="";
+	char temp[1024]="";
 	int n, fd = open("lista-tarefas-concluidas.txt", O_RDONLY);
-	while((n=readln(fd,temp,80)) > 0){
+	while((n=readln(fd,temp,1024)) > 0){
 		write(1,temp,n);
 		write(fd_fifo2,temp,n);
-		puts(temp);
 	}
-	write(fd_fifo2,"FIM TRANSMISSAO",16);
+	write(fd_fifo2,"FIM TRANSMISSAO\n",16);
 	close(fd);
 }
 
@@ -349,7 +357,9 @@ void alarme(int sig){
 void filhoterminou(int sig){
 	int pid = wait(&status); 
 	contaPipesExecutados++;
-	if(WEXITSTATUS(status) == -1 || !WIFEXITED(status)){
+	printf("rrrrrrrrrrrrrrrrrr %d\n",WEXITSTATUS(status));
+	if(WEXITSTATUS(status) == 255 || !WIFEXITED(status)){
+		printf("DEBUGGGGGGGGGGGGGGGGGGGGGGGg\n");
 		flag_erroExecucaoTarefa=1;
 	}
 
@@ -401,6 +411,8 @@ void executarTarefa(char *comandosRecebidos, int numeracaoTarefas){
 	/* coloca em comandos2 a lista definitiva de comandos a executar*/
 	n_pipes = separarComandos2(comandos,comandos2,n_tokens);
 
+	printf("Numero de pipes: %d\n",n_pipes);
+
 	puts("FUNCAO EXECUTARTAREFA ");
 	printf("tempo-execucao %d\n",tempo_execucao);
 	printf("tempo-inatividade %d\n",tempo_inatividade);
@@ -424,7 +436,7 @@ void executarTarefa(char *comandosRecebidos, int numeracaoTarefas){
 	}
 
 	// criar os n_pipes pipes
-	for(i=0;i<n_pipes;i++){
+	for(i=0;i<n_pipes+2;i++){
 		if(pipe(fd[i]) == -1){
 			sprintf(buffer,"Erro ao criar o pipe %d",i+1);
 			perror(buffer);
@@ -435,7 +447,7 @@ void executarTarefa(char *comandosRecebidos, int numeracaoTarefas){
 	
 	alarm(1); // ativa o contador
 
-	for(i=0;i<n_pipes+1 && !flag_tempo_execucao && !flag_tempo_inatividade && !flag_tarefa_terminada && !flag_erroExecucaoTarefa ;i++){
+	for(i=0;i<n_pipes+2 && !flag_tempo_execucao && !flag_tempo_inatividade && !flag_tarefa_terminada && !flag_erroExecucaoTarefa ;i++){
 		if((pid=fork()) == -1){
 			sprintf(buffer, "Erro no fork %d",i+1);
 			perror(buffer);
@@ -457,18 +469,22 @@ void executarTarefa(char *comandosRecebidos, int numeracaoTarefas){
 				_exit(-1);
 			}
 			else {
-				if(i==n_pipes){
+				if(i==n_pipes+1){
 					if(dup2(fd[i-1][0],0)==-1){
 						sprintf(buffer,"Erro no dup2 %d",i-1);
 						perror(buffer);
 						_exit(-1);
 					}
+
+					sprintf(buffer,"\t\t\tRESULTADO TAREFA #%d:\n",numeracaoTarefas);
+					write(1,buffer, strlen(buffer)+1);
+
 					close(fd[i-1][0]);
-					//sleep(5);
-					execvp(comandos2[i][0],comandos2[i]);
-					sprintf(buffer,"Erro no execvp %d",i+1);
-					perror(buffer);
-					_exit(-1);
+					n=read(fd[n-1][0],buffer,1024);
+
+					write(1,buffer,n);
+					
+					_exit(0);
 				}
 				else{
 					// tenho que fechar os descritores anteriores
@@ -537,6 +553,8 @@ void executarTarefa(char *comandosRecebidos, int numeracaoTarefas){
 		sprintf(buffer,"#%d, max. execucao: %s",numeracaoTarefas,tarefa);
 		write(fd_tarefasConcluidas,buffer,19+strlen(tarefa));
 		write(fd_tarefasConcluidas,"\n",1);
+		sprintf(buffer,"\t\t\tRESULTADO TAREFA #%d:\nMaximo de execucao atingido\n",numeracaoTarefas);
+		write(1,buffer, strlen(buffer)+1);
 	}
 	else if(flag_tempo_inatividade){
 		// colocar no ficheiro de tarefas concluidas
@@ -544,6 +562,8 @@ void executarTarefa(char *comandosRecebidos, int numeracaoTarefas){
 		sprintf(buffer,"#%d, max. inactividade: %s",numeracaoTarefas,tarefa);
 		write(fd_tarefasConcluidas,buffer,23+strlen(tarefa));
 		write(fd_tarefasConcluidas,"\n",1);
+		sprintf(buffer,"\t\t\tRESULTADO TAREFA #%d:\nMaximo de inatividade atingido\n",numeracaoTarefas);
+		write(1,buffer, strlen(buffer)+1);
 	}
 	else if(flag_tarefa_terminada){
 		// colocar no ficheiro de tarefas concluidas
@@ -551,6 +571,8 @@ void executarTarefa(char *comandosRecebidos, int numeracaoTarefas){
 		sprintf(buffer,"#%d, terminada: %s",numeracaoTarefas,tarefa);
 		write(fd_tarefasConcluidas,buffer,15+strlen(tarefa));
 		write(fd_tarefasConcluidas,"\n",1);
+		sprintf(buffer,"\t\t\tRESULTADO TAREFA #%d:\nTarefa terminada pelo utilizador\n",numeracaoTarefas);
+		write(1,buffer, strlen(buffer)+1);
 	}
 	else if(flag_erroExecucaoTarefa){
 		// colocar no ficheiro de tarefas concluidas
@@ -558,6 +580,8 @@ void executarTarefa(char *comandosRecebidos, int numeracaoTarefas){
 		sprintf(buffer,"#%d, Erro ao executar: %s",numeracaoTarefas,tarefa);
 		write(fd_tarefasConcluidas,buffer,22+strlen(tarefa));
 		write(fd_tarefasConcluidas,"\n",1);
+		sprintf(buffer,"\t\t\tRESULTADO TAREFA #%d:\nErro ao executar a tarefa\n",numeracaoTarefas);
+		write(1,buffer, strlen(buffer)+1);
 	}
 	else{		// executada com exito
 		sprintf(buffer,"#%d, concluida: %s",numeracaoTarefas,tarefa);
