@@ -5,12 +5,14 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 
-int readln(int fildes, char *buf, int nbyte);
-char * concatenaString(char *argv[], char *buffer, int total);
-void comunicacao();
+void iniciaInterpretador();
 void getPrimeiraPalavra(char q[80], char primeiraPalavra[30]);
+void enviarComando(char fraseEnviar[80]);
 void historico();
 void ajuda();
+void listar();
+void alarme();
+int readln(int fildes, char *buf, int nbyte);
 
 int fd1, fd2;
 const char *prompt = "argus$ ";
@@ -19,33 +21,91 @@ char *fifo2 = "/tmp/fifo2";  // FIFO file path
 
 
 int main(int argc, char *argv[]){
-	int n;
+	int n,i;
+	char fraseEnviar[80] = "";
+	printf("DEBUGGG\n");
+	char buffer[1024];
+	
+	fd1 = open(fifo1,O_WRONLY);
+	fd2 = open(fifo2,O_RDONLY);
 
 	if(argc == 1){ // estabelece comunicacao
-		comunicacao(); 
+		printf("INICIA inicia Interpretador\n");
+		iniciaInterpretador(); 
 	}
 	else{
-		//buffer = concatenaString(&argv[1],&buffer,argc-2);
+		printf("INICIA Executar UMA VEZ\n");
+		for(i=1;i<argc;i++){
+			strcat(fraseEnviar,argv[i]);
+			strcat(fraseEnviar," ");
+		}
+		
+		printf("fraseEnviar: %s - %d\n",fraseEnviar, strlen(fraseEnviar));	
+
+		enviarComando(fraseEnviar);
 	}
+
+	close(fd1); close(fd2);
 
 	return 0;
 
 }
 
-void comunicacao(){
+void enviarComando(char fraseEnviar[80]){
+	int n;
+	char buffer[1024]="";
+	char primeiraPalavra[30]="";
+	strcpy(buffer,fraseEnviar);	
+	getPrimeiraPalavra(buffer,primeiraPalavra);
+
+	printf("primeira palavra: %s -- %d\n",primeiraPalavra,strlen(primeiraPalavra));
+
+	if(strcmp(primeiraPalavra,"-i") == 0){
+		write(fd1,fraseEnviar,strlen(fraseEnviar));
+	}
+	else if(strcmp(primeiraPalavra,"-m") == 0){
+		write(fd1,fraseEnviar,strlen(fraseEnviar));
+	}
+	else if(strcmp(primeiraPalavra,"-e") == 0){
+		printf("Frase enviada: %s -- %d\n",fraseEnviar,strlen(fraseEnviar));
+		write(fd1,fraseEnviar,strlen(fraseEnviar));
+		strcpy(fraseEnviar,"");
+		n=read(fd2,fraseEnviar,80);
+		write(1,fraseEnviar,n);	
+	}
+	else if(strcmp(primeiraPalavra,"-l") == 0){
+		write(fd1,fraseEnviar,strlen(fraseEnviar));
+		strcpy(fraseEnviar,"");
+		listar();
+	}
+	else if(strcmp(primeiraPalavra,"-t") == 0){
+		printf("terminar\n");
+	}
+	else if(strcmp(primeiraPalavra,"-r") == 0){
+		write(fd1,fraseEnviar,strlen(fraseEnviar));
+		strcpy(fraseEnviar,"");
+		historico();
+	}
+
+	else if(strcmp(primeiraPalavra,"ajuda") == 0){
+		write(fd1,fraseEnviar,strlen(fraseEnviar));
+		strcpy(fraseEnviar,"");
+		ajuda();
+	}
+
+
+}
+
+void iniciaInterpretador(){
 	char *sair="SAIR\n";
 	char primeiraPalavra[30]="";
 	char fraseLida[80] = "", buffer[80] = "";
 	int n=0;
 	int flag = 0;
-
-	// abre os dois FIFOS
 	fd1 = open(fifo1,O_WRONLY);
 	fd2 = open(fifo2,O_RDONLY);
 
-
 	do{
-		fflush(stdin);
 		strcpy(fraseLida,"");
 		strcpy(buffer,"");
 		strcpy(primeiraPalavra,"");
@@ -77,7 +137,9 @@ void comunicacao(){
 				write(1,fraseLida,n);	
 			}
 			else if(strcmp(primeiraPalavra,"listar") == 0){
-				printf("listar\n");
+				write(fd1,fraseLida,n);
+				strcpy(fraseLida,"");
+				listar();
 			}
 			else if(strcmp(primeiraPalavra,"terminar") == 0){
 				printf("terminar\n");
@@ -128,19 +190,41 @@ void historico(){
 	}
 }
 
-char * concatenaString(char *argv[], char *buffer, int total){
-	int i;
-	char *s = buffer;  // colocar em s o endereco de buffer 
-	strcpy(buffer,argv[0]);
-	for(i=1;i<total;i++){
-		strcat(buffer," ");
-		strcat(buffer,argv[i]);
-	}
-	strcat(buffer," \0");
-	return s;
-	
-}	
 
+void listar(){
+	char temp[80];
+	char buffer[100];
+	int n=1, flag_listar=0;
+	while(!flag_listar && n!=0){
+		n=read(fd2,temp,80);
+		temp[n]='\0';
+		if(strcmp(temp,"FIM TRANSMISSAO") == 0){
+			write(1,temp,n);
+			write(1,"DETETOU O FIM\n",14);
+			flag_listar=1;
+		}
+		else{
+			sprintf(buffer,"Recebido: %s - %d\n",temp,n);
+			write(1,buffer,15+strlen(temp));
+			write(1,temp,n);
+			write(1,"PAOUUUUU\n",9);
+		}
+	}
+}
+
+void getPrimeiraPalavra(char q[80], char primeiraPalavra[30]){
+	int i,j, flag = 0;
+	for(i=j=0;i<strlen(q) && !flag;i++){
+		if(q[i]==' ' || q[i]=='\n'){
+			flag=1;
+		}
+		else{
+			primeiraPalavra[j++]=q[i];
+		}
+	}
+	primeiraPalavra[j]='\0';
+
+}
 
 int readln(int fildes, char *buf, int nbyte){
 	int n, flag = 0;
@@ -164,17 +248,3 @@ int readln(int fildes, char *buf, int nbyte){
 
 	return -1;
 }	
-
-void getPrimeiraPalavra(char q[80], char primeiraPalavra[30]){
-	int i,j, flag = 0;
-	for(i=j=0;i<strlen(q) && !flag;i++){
-		if(q[i]==' ' || q[i]=='\n'){
-			flag=1;
-		}
-		else{
-			primeiraPalavra[j++]=q[i];
-		}
-	}
-	primeiraPalavra[j]='\0';
-
-}
