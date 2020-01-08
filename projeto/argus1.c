@@ -188,8 +188,6 @@ void historico(){
 			flag_historico = 1;
 		}
 		else{
-			sprintf(buffer,"RECEBIDO: %s - %d\n",temp,n);
-			write(1,buffer,strlen(buffer));
 			write(1,temp,n);
 		}
 	}
@@ -210,8 +208,6 @@ void listar(){
 		}
 		else{
 			write(1,temp,n);
-			printf("%d\n",n);
-			printf("%s\n", temp);
 		}
 		memset(temp,0,sizeof(temp));
 	}
