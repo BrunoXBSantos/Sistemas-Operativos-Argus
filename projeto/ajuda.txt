@@ -1,3 +1,0 @@
-tempo-inactividade [segs]
-tempo-execucao [segs]
-executar p1 | p2 | ... | pn
